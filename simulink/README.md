@@ -37,6 +37,8 @@ out = sim(in);
 
 ## MATLAB 伯德图、裕度和时域响应
 
+[中文学术报告](../analysis/foc_academic_report.pdf) 给出模型方程、断环位置、正弦拟合方法及与阶跃响应的对照，并讨论自由轴反电动势和编码器滤波对结果的影响。[LaTeX 稿件](../analysis/foc_academic_report.tex)
+
 在仓库根目录运行以下两行（已在 MATLAB R2026a + Control System Toolbox 上运行）。脚本读取与 Simulink 相同的电机和控制参数。返回的 `model.current`、`model.speed` 和 `model.locked` 含开环返回比 `open`、真实输出闭环 `closed` 和反馈测量闭环 `measured`。
 
 ```matlab

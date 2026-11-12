@@ -1,0 +1,262 @@
+% From analysis/: xelatex foc_academic_report.tex (twice), or tectonic foc_academic_report.tex
+\documentclass[UTF8,fontset=windows,11pt,a4paper]{ctexart}
+\usepackage[left=22mm,right=22mm,top=23mm,bottom=22mm,headheight=15pt]{geometry}
+\usepackage{amsmath,amssymb,graphicx,booktabs,array,caption,fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+\usepackage[unicode,colorlinks=true]{hyperref}
+\definecolor{navy}{HTML}{244258}
+\hypersetup{linkcolor=navy,urlcolor=navy,citecolor=navy,
+  pdftitle={DENG FOC 2208 电机级联电流与速度控制的离散小信号分析}}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Consolas}[Scale=.90]
+\DeclareFontShape{OMX}{cmex}{m}{n}{<-> cmex10}{}
+\ctexset{section={format=\Large\bfseries\color{navy},beforeskip=1.0ex,afterskip=.85ex},
+subsection={format=\large\bfseries,beforeskip=1.0ex,afterskip=.55ex}}
+\captionsetup{font=small,labelfont=bf,labelsep=quad,skip=4pt}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{.25em}
+\setlength{\abovedisplayskip}{6pt}
+\setlength{\belowdisplayskip}{6pt}
+\setlength{\jot}{3pt}
+\renewcommand{\arraystretch}{1.15}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\footnotesize DENG FOC 2208 电机控制}
+\fancyhead[R]{\footnotesize 离散小信号分析}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{.3pt}
+\newcommand{\plotfig}[4]{\begin{center}\includegraphics[width=#2\linewidth]{results/#1.png}
+\captionof{figure}{#3}\label{#4}\end{center}}
+\newcommand{\unit}[1]{\,\mathrm{#1}}
+\newcommand{\file}[1]{\texttt{\detokenize{#1}}}
+\raggedbottom
+\begin{document}
+\thispagestyle{plain}
+\begin{center}
+{\fontsize{22}{30}\selectfont\bfseries DENG FOC 2208 电机级联电流与速度控制的\\离散小信号分析\par}
+\vspace{3pt}
+{\large 基于 ESP32-P4 固件的频域、根轨迹与时域验证\par}
+\vspace{5pt}
+{\small 2026 年 11 月 12 日 \quad 工程版本 \texttt{c960f61} \quad MATLAB R2026a}
+\end{center}
+
+\noindent\textbf{摘\quad 要}\quad
+针对 ESP32-P4 上运行的 DENG FOC 2208 级联控制器，研究自由轴和堵转条件下的电流跟踪，以及测速滤波对速度响应判读的影响。从固件还原数字 PI 的更新次序，按 Simulink 模型对静止空载工作点线性化，用 SymPy 消元并在 MATLAB 中建立离散状态空间模型。通过开环返回比、闭环伯德图和根轨迹求稳定裕度，再以阶跃及四组正弦响应复核。自由轴与堵转的电流跟踪带宽分别为 0.0003014 和 0.07155 Hz。速度环相位裕度为 $50.00^\circ$，增益裕度为 11.91 dB；在 87.22 Hz 的正弦给定下，电机状态与编码器估计的幅值比分别为 11.76 和 1.08。结果表明，机械边界会改变电流内环的低频跟踪能力，测速通道会衰减转速共振在反馈信号上的表现。
+
+\noindent\textbf{关键词}\quad 磁场定向控制；永磁同步电机；数字 PI；稳定裕度；根轨迹；正弦跟踪
+
+\section{引言}
+该项目以电角速度误差产生 $q$ 轴电流给定，再由电流控制器调节电压。固件同时提供滤波后的电流与估计速度，仿真模型还能读取绕组电流与转子速度状态\cite{firmware,model}。因此，“电流环带宽”必须说明转轴能否转动，“速度环带宽”必须指明观察哪一路输出。本文对同一组 PI 作三个试验：自由轴上断开速度外环并注入电流给定；保持电流内环闭合并注入速度给定；固定转轴并重复电流试验。
+
+\begin{center}
+\begin{tikzpicture}[x=1cm,y=1cm,>=Latex,thick,font=\small,
+ block/.style={draw=navy,rounded corners=.6mm,inner sep=3pt,minimum height=.62cm,align=center},
+ sum/.style={circle,draw=navy,inner sep=.8pt,minimum size=.42cm}]
+\node (r) at (0,0) {$\omega_e^\star$};
+\node[sum] (sw) at (1.15,0) {$\sum$};
+\node[block] (cw) at (2.65,0) {速度 PI};
+\node[sum] (si) at (4.71,0) {$\sum$};
+\node[block] (ci) at (6.05,0) {电流 PI};
+\node[block] (motor) at (9.10,0) {平均桥与电机\\含反电动势};
+\node (w) at (11.90,0) {$\omega_e$};
+\draw[->] (r)--(sw);\draw[->] (sw)--(cw);\draw[->] (cw)--node[above]{$i_q^\star$}(si);
+\draw[->] (si)--(ci);\draw[->] (ci)--node[above]{$u_q$}(motor);
+\draw[->] (motor)--(w);
+\node[block] (hi) at (6.70,-1.02) {电流低通};
+\node[block] (hw) at (4.0,-2.13) {角度差分与速度低通};
+\draw[->] (motor.south) -- (9.1,-1.02) --node[above]{$i_q$} (hi);
+\draw[->] (hi.west) -| node[pos=.88,left]{$-$}(si.south);
+\draw[->] (motor.south east) -- ++(.40,0) |- (10.55,-2.13) -- node[above]{$\theta_e$（位置状态）}(hw);
+\draw[->] (hw.west) -| node[pos=.91,left]{$-$}(sw.south);
+\end{tikzpicture}
+\captionof{figure}{静止附近的 $q$ 轴分析通道。上方为给定与控制量，回线分别闭合电流和速度反馈。}\label{fig:system}
+\end{center}
+
+图~\ref{fig:system} 中，$\omega_e^\star$ 是电角速度给定，$i_q^\star$ 是速度控制器产生的电流给定。实际运行时，编码器采集机械角度，软件用极对数换算得到电角度，再对角度差分并滤波。切开外环观察电流时，转子仍可随电磁转矩加速；若要单独检验绕组电流响应，还须在模型中施加堵转约束。两种试验的区别贯穿后面的频域和时域比较。
+
+\newpage
+\section{模型、参数与工作点}
+\subsection{电流、转矩与反电动势}
+模型将三相 2208 无刷电机等效为星接、正弦反电势、无凸极的永磁同步电机。$p$ 为极对数，$\omega_e=p\omega_m$，$\omega_m$ 为机械角速度。各相电流以 A 计，调制命令 $u_q$ 无量纲。取 $i_d=i_q=\omega_m=0$、无负载扰动，所有变量表示相对该平衡点的增量。转速与电流的乘积属二阶小量，但永磁磁链 $\psi_f$ 在静止时仍存在，反电动势的一阶项必须保留。由项目电机方程可得\cite{model}
+\begin{align}
+  L_q\dot i_q &= K_vu_q-R_s i_q-\psi_f\omega_e, &
+  J\dot\omega_e &= pK_t i_q-B\omega_e, \label{eq:plant}\\
+  K_v &= V_{\rm dc}(2^b-1)/2^b, &
+  K_t &= \tfrac32p\psi_f . \nonumber
+\end{align}
+其中 $b$ 为 PWM 位数。固件生成 $0$ 到 $2^b-1$ 的计数，桥模型以 $2^b$ 个状态换算占空比，浮置中点消除共模。令 $Z_q=L_qs+R_s$、$M=Js+B$，消去式~\eqref{eq:plant} 的速度项即得调制命令到电流的对象
+\begin{equation}
+ P_{i,\mathrm{free}}(s)=\frac{K_v M}{Z_q M+pK_t\psi_f},
+ \qquad P_{i,\mathrm{lock}}(s)=\frac{K_v}{Z_q}.\label{eq:free}
+\end{equation}
+这两个式子保持相同绕组和逆变器，只改变转轴的运动约束。$d$ 轴给定为零，在所选工作点与转速一阶解耦；后文分析传递转矩的 $q$ 轴。
+
+\begin{center}\captionof{table}{仿真模型的名义参数。电流环与速度环均按 A 和电 rad/s 统一换算。}\label{tab:params}
+\small\begin{tabular}{@{}lll@{}}\toprule
+物理量或控制量 & 符号 & 数值与单位\\\midrule
+极对数、直流母线、PWM 位数 & $p,\ V_{\rm dc},\ b$ & 7，12 V，10 bit\\
+每相电阻、电感 & $R_s,\ L_d=L_q$ & $18.76~\Omega$，2.58 mH\\
+永磁磁链、转矩常数 & $\psi_f,\ K_t$ & 0.0085544 Wb，0.089821 N\,m/A\\
+转动惯量、黏滞摩擦 & $J,\ B$ & $5.0\times10^{-7}$ kg\,m$^2$，$1.07\times10^{-6}$ N\,m\,s/rad\\
+电流 PI 比例、积分增益 & $k_{p,i},\ k_{i,i}$ & 0.25 A$^{-1}$，0.8 (A\,s)$^{-1}$\\
+速度 PI 比例、积分增益 & $k_{p,\omega},\ k_{i,\omega}$ & 0.027 A/(rad/s)，0.20 A/[(rad/s)\,s]\\
+电流与速度低通更新权重 & $\alpha_i,\ \alpha_\omega$ & 0.15，0.05\\
+控制周期、对象积分步长 & $T,\ h$ & 1 ms，10 $\mu$s\\\bottomrule
+\end{tabular}\end{center}
+
+\subsection{参数来源与适用边界}
+固件以 mA 表示电流，单位换算分别作用于两级 PI 的输入和输出。$\psi_f$ 由模型给定的线间有效值反电势常数 7.68 V/krpm 换算。$R_s,L_q,J,B$ 取自项目引用的另一只同套件 2208 的辨识记录，惯量和摩擦沿用工程对机械轴单位的解释\cite{model}。本文以固定周期近似固件循环，假定驱动已使能、编码器每拍读取成功、轴向已标定、给定与调制量位于限幅以内。PWM、ADC 和角度量化按连续平均值处理。
+
+\newpage
+\section{离散建模与试验方法}
+\subsection{从控制任务到采样状态方程}
+每一拍先取得角度与电流，计算角差估速和电流低通，再按速度 PI、电流 PI 的顺序给出调制命令。两级控制器均以旧积分状态 $x_I[k]$ 生成当拍输出，随后更新积分\cite{firmware}。令 $e[k]$ 为相应误差，零初值下有
+\begin{equation}
+ u[k]=k_pe[k]+x_I[k],\quad x_I[k+1]=x_I[k]+k_iTe[k],
+ \qquad C(z)=k_p+\frac{k_iT}{z-1}. \label{eq:pi}
+\end{equation}
+电流与速度的低通均满足 $y[k]=(1-\alpha)y[k-1]+\alpha x[k]$，故 $H_\alpha(z)=\alpha z/(z-1+\alpha)$。编码器先对两拍角度求差，
+\begin{equation}
+ \widehat{\Omega}_e(z)=H_{\alpha_\omega}(z)\frac{1-z^{-1}}{T}\Theta_e(z),
+ \qquad \widehat I_q(z)=H_{\alpha_i}(z)I_q(z).\label{eq:sensor}
+\end{equation}
+差分得到上一采样区间的平均速度，电机状态给出的 $\omega_e[k]$ 是区间端点速度。固件还用预测角作 Park 及逆 Park 变换；在电压、电流均零的平衡点，预测角扰动对两种变换输出的一阶贡献为零。
+
+取状态 $x=[i_q,\omega_e,\theta_e]^\mathsf T$，由式~\eqref{eq:plant} 及 $\dot\theta_e=\omega_e$ 写成 $\dot x=Ax+b_u u_q$。增广一维常值输入，令 $F=\left[\begin{smallmatrix}A&b_u\\0&0\end{smallmatrix}\right]$。一拍内保持控制量，共执行 $T/h=100$ 次四阶 Runge--Kutta 更新：
+\begin{equation}
+ \begin{bmatrix}\Phi&\Gamma\\0&1\end{bmatrix}
+ =\left(\sum_{j=0}^{4}\frac{(hF)^j}{j!}\right)^{100},\qquad
+ x[k+1]=\Phi x[k]+\Gamma u_q[k]. \label{eq:rk4}
+\end{equation}
+SymPy 对原方程求雅可比、消元求传递函数\cite{sympy,analysis}；MATLAB 直接组装状态空间，采用每拍角增量闭合测速反馈，消去绝对角度的冗余状态\cite{analysis}。
+
+\subsection{选取开环、闭环与观察量}
+记 $P_i,P_\omega,P_{\hat\omega}$ 为调制输入分别到真实电流、真实电角速度、估计电角速度的离散传递函数。记 $H_i=H_{\alpha_i}$，$D_i=1+C_iH_iP_i$。在默认正向标定下，两次闭环试验满足
+\begin{align}
+ L_i&=C_iH_iP_i, &
+ T_i=\frac{I_q}{I_q^\star}&=\frac{C_iP_i}{D_i},\label{eq:inner}\\
+ L_\omega&=\frac{C_\omega C_iP_{\hat\omega}}{D_i},&
+ T_\omega=\frac{\Omega_e}{\Omega_e^\star}&=
+ \frac{C_\omega C_iP_\omega}{D_i+C_\omega C_iP_{\hat\omega}} .\label{eq:outer}
+\end{align}
+裕度用反馈返回比 $L$ 计算；带宽和阶跃用相应物理通道 $T$ 计算。速度估计闭环具有与 $T_\omega$ 相同的特征方程，分子中的 $P_\omega$ 换为 $P_{\hat\omega}$。这一差别直接影响后面的共振峰和超调判读。
+
+\subsection{数值组装与检查}
+具体实现从式~\eqref{eq:rk4} 取出调制输入到各状态的三条通道，
+$[P_i,P_\omega,P_\theta]^\mathsf{T}=(zI-\Phi)^{-1}\Gamma$，再用式~\eqref{eq:sensor} 将 $P_\theta$ 转为 $P_{\hat\omega}$。先闭合电流误差求和点，保留速度状态和估计速度两个出口，再闭合速度误差求和点。堵转对照以 $L_q\dot i_q=K_vu_q-R_si_q$ 重新生成对象，沿用同一组数字 PI 和电流低通。分别检查由给定至反馈的传递函数是否等于 $L/(1+L)$，并核对名义闭环直流跟踪增益均为 1。随后才对三组模型求裕度和响应。
+
+\newpage
+\section{频率响应与稳定裕度}
+\subsection{计算判据与电流内环结果}
+在 $z=e^{j2\pi fT}$ 上求频率响应，分析上限为 $f_N=1/(2T)=500$ Hz。脚本按极零点确定低频边界，生成 4801 个对数频点，再以单位圆上的数值求根细化交越，并用 \texttt{allmargin} 作对照\cite{analysis,margins}。相位裕度取 $|L|=1$ 处与 $-180^\circ$ 的间隔；增益裕度取负实轴交点处的 $-20\log_{10}|L|$，包括 $z=-1$。按 MATLAB 的 3 dB 口径，将 $|T|$ 首次降至 $|T(1)|\,10^{-3/20}$ 的频率记为闭环带宽\cite{bw}。
+
+\begin{center}\captionof{table}{开环返回比的相位、增益裕度，以及给定至真实输出的闭环带宽。}\label{tab:margins}
+\small\begin{tabular}{@{}lrrrrr@{}}\toprule
+通道 & 带宽/Hz & 0 dB 交越/Hz & 相位裕度 & 负实轴交越/Hz & 增益裕度/dB\\\midrule
+自由轴电流 & 0.0003014 & 0.0003025 & $90.07^\circ$ & 500 & 39.30\\
+堵转电流 & 0.07155 & 0.08242 & $98.98^\circ$ & 500 & 37.78\\
+电角速度 & 无交点$^{a}$ & 62.29 & $50.00^\circ$ & 154.51 & 11.91\\\bottomrule
+\end{tabular}\\[-1pt]
+{\footnotesize $^{a}$ 判定区间为直流至奈奎斯特频率。速度估计通道另见第~\ref{sec:speed}~节。}\end{center}
+
+\plotfig{bode_current}{.88}{自由转子 $q$ 轴电流的伯德图。蓝线为开环返回比，棕色实线为实际电流闭环，灰色虚线为滤波反馈闭环。}{fig:ibode}
+
+图~\ref{fig:ibode} 的极低频拐点可从式~\eqref{eq:free} 解释。堵转时静态电流对象增益为 $K_v/R_s=0.6390$ A/单位调制；自由轴上它降至 $K_v/(R_s+pK_t\psi_f/B)=0.002376$ A/单位调制，约为前者的 $1/269$。电流引起的转速变化通过反电动势抵消部分绕组电压，积分器要经过较长时间才能把电流误差消除。这里的数值衡量给定跟踪，不能单从绕组时间常数 $L_q/R_s=0.138$ ms 直接读出。
+
+\newpage
+\subsection{速度闭环与反馈测量的差异}\label{sec:speed}
+保持电流内环闭合，在速度误差求和点断环，得到表~\ref{tab:margins} 中的 62.29 Hz 交越。随后闭合速度反馈，分别观察电机物理状态和编码器估计。图~\ref{fig:wbode} 左列覆盖低频至采样上限，右列放大交越和共振附近的频段。
+
+\plotfig{bode_speed}{1}{速度环伯德图。左列为完整扫频，右列放大交越与共振区；棕色三角标出真实电角速度的幅值峰。}{fig:wbode}
+
+真实电角速度闭环在 87.22 Hz 出现 $+21.41$ dB 峰值，即给定幅值的 11.76 倍。在 500 Hz，幅值相对直流仍为 $+6.78$ dB，整个有效频带内找不到向下的 $-3$ dB 交点。指标文件以 \texttt{Inf} 作为这一情形的程序返回值。该结果不能支持对 500 Hz 以上频率的外推，也不能将高增益解释为高保真跟踪。
+
+估计速度的 $-3$ dB 带宽为 112.73 Hz。式~\eqref{eq:outer} 表明两种输出共享闭环极点，而式~\eqref{eq:sensor} 引入区间平均和低通滤波，改变了估计速度的幅值及相位。在 87.22 Hz 处，反馈估计幅值只有真实状态的 $1.081/11.759=9.19\%$。正文中的 87.22 Hz 是\textbf{施加给定扰动的频率}，转子工作点仍在静止附近。
+
+这一结果也解释了两种常见读数为何会给出不同印象。$50.00^\circ$ 描述速度返回比在单位增益处距临界相位的余量；$21.41$ dB 描述真实速度对正弦给定的放大程度。两者来自不同的传递函数。仅据相位裕度套用低阶单位反馈模型的经验公式，无法确定该六阶速度系统的超调量。
+
+\newpage
+\subsection{根轨迹与临界增益}
+为检验表~\ref{tab:margins} 的增益裕度，选取一个 PI，将其 $k_p,k_i$ 同时乘以正标量 $k$，保留控制器零点。以 $1+kL(z)=0$ 求闭环极点轨迹\cite{root}。考查速度环时固定已闭合电流环的参数；考查电流环时保持速度环断开。图~\ref{fig:root} 中，名义运行点为 $k=1$，虚线单位圆给出离散系统的稳定边界。
+
+\plotfig{root_locus}{1}{自由轴电流内环（左）和速度外环（右）的根轨迹。叉号、空心圆、实心点分别为开环极点、开环零点和名义闭环极点；菱形为首次触及单位圆的位置。}{fig:root}
+
+\begin{center}\captionof{table}{名义闭环阶数、最大极点模与单环增益上调的首次临界点。}\label{tab:root}
+\small\begin{tabular}{@{}lrrrl@{}}\toprule
+通道 & 阶数 & 最大极点模 $\rho$ & $k_{\rm crit}$ & 临界模态\\\midrule
+自由轴电流 & 4 & 0.99999810 & 92.256 & $z=-1$，500 Hz\\
+堵转电流 & 3 & 0.99955807 & 77.431 & $z=-1$，500 Hz\\
+电角速度 & 6 & 0.99649005 & 3.941 & 共轭极点对，154.51 Hz\\\bottomrule
+\end{tabular}\end{center}
+
+名义极点均位于单位圆内。两种电流环先在 $z=-1$ 达到稳定边界，对应相邻两拍交替变号。速度外环则由共轭极点对越界，临界振荡频率和原名义运行点的 87.22 Hz 共振峰不同。对每个单环，$20\log_{10} k_{\rm crit}$ 均与表~\ref{tab:margins} 的增益裕度一致。
+
+自由轴电流环的主极点几乎贴近 $z=1$。从该极点模折算的指数衰减时间常数 $\tau=-T/\ln\rho$ 为 526.75 s。这解释了该环具有较大裕度却要用分钟量级观察阶跃尾部的原因。$k_{\rm crit}$ 描述单一增益缩放方向的失稳边界，并不提供兼顾超调、噪声与饱和的 PI 整定值。
+
+\newpage
+\section{时域验证}
+\subsection{阶跃给定与调节时间}
+自零初态施加阶跃。自由轴电流试验令 $i_q^\star=0.1~\mu$A，速度环试验令 $\omega_e^\star=0.01$ 电 rad/s。根据名义极点模选取仿真时长，使 $\rho^N\leq10^{-4}$；对电流的长尾采用增广状态矩阵的整数次幂跨越多拍，仍按原控制周期演化。调节时间以最终值的 $\pm2\%$ 为误差带，在最后一次超界附近二分至原模型的整数采样拍\cite{analysis}。
+
+\plotfig{step_response}{.97}{阶跃响应。上排为自由轴电流，下排为电角速度；左列展示起始 40 ms，右列展示包含调节过程的时间窗。点线为给定，蓝线为实际状态，棕色虚线为反馈。}{fig:step}
+
+图~\ref{fig:step} 上排的电流在初始几拍短暂升高，随着转子加速而回落，随后才由积分逐步跟踪给定。电流未超过最终值，进入并持续留在 2\% 误差带需 2059.997 s，约 34.3 min，与主极点给出的时间尺度一致。
+
+下排中真实电角速度在第 3 拍达到 $0.062646$ 电 rad/s。相对于 $0.01$ 电 rad/s 的最终值，超调量为 $(0.062646/0.01-1)\times100\%=526.46\%$；其后在 86 ms 进入并保持在 2\% 带内。滤波后的反馈曲线未呈现同等幅度的峰值。该试验直接给出不同观察量在起动瞬态中的差异。
+
+\newpage
+\subsection{两环正弦试验与频域交叉核验}
+每个环选择两个频点。电流环取 $0.2f_{\rm BW}$ 和 $f_{\rm BW}$；速度真实输出无 $-3$ dB 交点，改取 $f_{\rm pk}/100$ 和 $f_{\rm pk}$。正弦峰值与阶跃幅值相同。将正弦振荡器与闭环状态方程增广，使初始模态充分衰减（$\rho^{N_{\rm warm}}\leq10^{-13}$），再记录约三个周期。对采样值按
+\[
+ y[n]=a\sin(2\pi fnT)+b\cos(2\pi fnT)+c
+\]
+作最小二乘拟合。给定幅值为 $A_r$ 时，幅值比为 $\sqrt{a^2+b^2}/A_r$，相位差为 $\operatorname{atan2}(b,a)$。将两者分别与频率响应的模和辐角比较。
+
+\plotfig{sine_response}{.94}{两环正弦跟踪。上排为 $q$ 轴电流，下排为电角速度。横坐标为给定周期数，便于同时比较毫赫兹级电流试验和共振附近的速度试验。}{fig:sine}
+
+\begin{center}\captionof{table}{由时域样本拟合的稳态幅值比和相位，正相位表示输出超前给定。}\label{tab:sine}
+\small\begin{tabular}{@{}lrrrrr@{}}\toprule
+给定 & 频率/Hz & 实际幅值比 & 实际相位 & 反馈幅值比 & 反馈相位\\\midrule
+电流 & 0.00006029 & 0.9807 & $-11.27^\circ$ & 0.9807 & $-11.27^\circ$\\
+电流 & 0.00030143 & 0.7079 & $-44.86^\circ$ & 0.7079 & $-44.86^\circ$\\
+电角速度 & 0.87222 & 1.0049 & $+2.94^\circ$ & 0.9992 & $-3.15^\circ$\\
+电角速度 & 87.2219 & 11.7595 & $-25.25^\circ$ & 1.0810 & $-109.52^\circ$\\\bottomrule
+\end{tabular}\end{center}
+
+表~\ref{tab:sine} 中八个输出与同一模型伯德值的幅值比绝对差均小于 $2\times10^{-9}$，相位差小于 $4\times10^{-9}$ 度。电流在带宽频率处给出预期的 0.7079 倍；速度在共振附近同时表现出幅值放大与观测相位差。这项交叉核验检查了数值实现和信号选取的一致性。
+
+\newpage
+\section{讨论与结论}
+\subsection{研究范围}
+本文的真实电流和真实速度均指电机模型的物理状态。以模型默认的 12 位 ADC、3.1 V 量程、15 m$\Omega$ 分流电阻与 50 倍放大器估算，一个理想 ADC 码约对应 1.0 mA 相电流，远大于 $0.1~\mu$A 的分析激励。该激励适合验证平滑模型的局部线性响应。12 位机械编码器在 1 ms 内增加一个角度码时，单拍差分值约变化 10.74 电 rad/s，低通及多拍平均会改变可观测信号。实机还涉及电压限幅、测量噪声、采样抖动和电机参数偏差；当前结果不足以给出手头样机的实测带宽。
+
+\subsection{结论}
+当转子由堵转变为自由转动时，同一组 PI 对应的电流跟踪带宽从 0.07155 Hz 降至 0.0003014 Hz。反电动势反馈使电流对象的静态增益降至堵转时的约 $1/269$，主极点的时间常数与约 34.3 min 的阶跃调节时间相互印证。因此，报告电流性能时应同时注明机械边界与输出定义。
+
+速度环的 $50.00^\circ$ 相位裕度和 11.91 dB 增益裕度表明默认线性模型在名义参数下稳定。根轨迹表明按固定 PI 零点放大速度控制器时，增益达到名义值的 3.941 倍会使极点触及单位圆。与此同时，真实速度在 87.22 Hz 放大 11.76 倍，阶跃超调 526.46\%；估计速度在同一正弦频点只放大 1.08 倍。评价速度跟踪必须同时考查返回比、真实速度和测速输出。当前证据支持静止、空载工作点的这些判断，带载及非零转速工况需要另取平衡点并验证参数。
+
+\subsection*{复现与数据可得性}
+固定版本见文献~\cite{analysis}。在仓库根目录运行下列命令。Python 读取与 Simulink 相同的参数脚本；MATLAB 返回频域指标、时域拟合值和各环的状态空间对象。可用 \file{checks.speed.sine(2)} 核对表~\ref{tab:sine} 的最后一行。
+\begin{flushleft}\small
+\file{python analysis/derive_foc_loops.py}\quad （Python + SymPy）\\
+\file{addpath('analysis')}\quad （MATLAB + Control System Toolbox）\\
+\file{[metrics,checks,model] = run_foc_analysis;}
+\end{flushleft}
+
+\begingroup\small
+\renewcommand{\refname}{参考文献}
+\begin{thebibliography}{9}\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}
+\bibitem{firmware} BassttElSevic. ESP32-P4 FOC：级联电流与速度控制任务 [CP/OL].
+\href{https://github.com/BassttElSevic/esp32p4-foc/blob/c20fad4021fcaa4c48edd10f71dbba7408f10d8e/firmware/foc/main/main.c}{固件源代码，版本 \texttt{c20fad4}}.
+\bibitem{model} BassttElSevic. DENG FOC 2208 参数化 Simulink 模型与参数来源 [CP/OL].
+\href{https://github.com/BassttElSevic/esp32p4-foc/tree/c960f61/simulink}{模型、数据脚本及辨识记录说明}.
+\bibitem{sympy} Meurer A, Smith C P, Paprocki M, et al. SymPy: symbolic computing in Python [J]. PeerJ Computer Science, 2017, 3:e103. \href{https://doi.org/10.7717/peerj-cs.103}{doi:10.7717/peerj-cs.103}.
+\bibitem{analysis} BassttElSevic. 电机传递函数推导、MATLAB 离散环路分析与输出 [CP/OL].
+\href{https://github.com/BassttElSevic/esp32p4-foc/tree/c960f61/analysis}{复现资料，版本 \texttt{c960f61}}.
+\bibitem{margins} MathWorks. \href{https://www.mathworks.com/help/control/ref/dynamicsystem.allmargin.html}{allmargin: gain margin, phase margin, delay margin, and crossover frequencies} [EB/OL].
+\bibitem{bw} MathWorks. \href{https://www.mathworks.com/help/control/ref/dynamicsystem.bandwidth.html}{bandwidth: frequency response bandwidth} [EB/OL].
+\bibitem{root} MathWorks. \href{https://www.mathworks.com/help/control/ref/dynamicsystem.rlocus.html}{rlocus: root locus plot of dynamic system} [EB/OL].
+\end{thebibliography}
+\endgroup
+\end{document}
