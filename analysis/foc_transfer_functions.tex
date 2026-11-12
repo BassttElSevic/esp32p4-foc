@@ -1,0 +1,260 @@
+% Compile with XeLaTeX or Tectonic on Windows (CTeX Windows fonts).
+\documentclass[UTF8,fontset=windows,11pt,a4paper]{ctexart}
+\usepackage[left=25mm,right=25mm,top=21mm,bottom=24mm]{geometry}
+\usepackage{amsmath,amssymb,booktabs}
+\DeclareFontShape{OMX}{cmex}{m}{n}{<-> cmex10}{}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Consolas}[Scale=.88]
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{.42em}
+\setlength{\abovedisplayskip}{.67em}
+\setlength{\belowdisplayskip}{.67em}
+\setlength{\jot}{4pt}
+\newcommand{\titleline}[1]{\noindent{\sffamily\bfseries\fontsize{20}{25}\selectfont #1}\par\vspace{.25em}\hrule\vspace{.45em}}
+\newcommand{\subt}[1]{\par\vspace{.55em}{\sffamily\bfseries\large #1}\par\nobreak}
+\newcommand{\Ci}{C_i}
+\newcommand{\Cw}{C_{\omega}}
+\newcommand{\Hi}{H_i}
+\newcommand{\Hw}{H_{\omega}}
+\newcommand{\we}{\Omega_e}
+\newcommand{\Wref}{\Omega_e^\star}
+\newcommand{\Iq}{I_q}
+\newcommand{\Ir}{I_q^\star}
+\newcommand{\Kt}{K_t}
+\newcommand{\kv}{K_v}
+\newcommand{\psiP}{\psi_f}
+\newcommand{\ee}{\mathrm{e}}
+\newcommand{\dd}{\mathrm d}
+\newcommand{\src}[1]{\texttt{\detokenize{#1}}}
+\begin{document}
+\titleline{FOC 电流内环与速度外环的传递函数}
+{\sffamily ESP32-P4 M2 闭环控制\enspace / \enspace DENG FOC 2208 无刷电机}
+
+\subt{1\quad 从模型的电压与转矩方程出发}
+设 $p$ 为极对数，$\omega_m$ 为机械角速度，$\omega_e=p\omega_m$ 为电角速度。
+电机模型采用幅值不变的 Clarke 与 Park 变换，$i_d,i_q$ 以 A 计，$v_d,v_q$ 以 V 计。
+电流正向、角度零点与转矩方向取项目默认标定。代码中的旋转坐标系方程为
+\begin{align}
+ L_d\dot i_d&=v_d-R_s i_d+\omega_e L_q i_q, &
+ L_q\dot i_q&=v_q-R_s i_q-\omega_e(L_d i_d+\psiP), \tag{1}\\
+ T_e&=\tfrac32 p\bigl[\psiP+(L_d-L_q)i_d\bigr]i_q, &
+ J\dot\omega_m&=T_e-B\omega_m-\tau_L. \tag{2}
+\end{align}
+$\psiP$ 为每相永磁磁链，$J,B$ 包含折算到电机轴的负载项。正的 $\tau_L$ 阻碍正向转动。
+本项目取 $L_d=L_q$，故 $T_e=\Kt i_q$，$\Kt=\tfrac32p\psiP$。
+
+\subt{从静止、零电流、零负载的平衡点取小信号}
+对式 (1) 求一阶变化量，$\delta(\omega_e i_q)=0$，$\delta(\omega_e i_d)=0$，
+但 $\delta(\omega_e\psiP)=\psiP\,\delta\omega_e$。以大写符号表示零初值的小信号拉氏变换，定义
+\[
+ Z_d=L_ds+R_s,\qquad Z_q=L_qs+R_s,\qquad M=Js+B.
+\]
+在固定轴角度附近，初始电流和电压都为零，Park 角预测误差与电流、电压的乘积在一阶消失。于是
+\begin{equation}
+ Z_d I_d=V_d,\qquad Z_q\Iq+\psiP\we=V_q,\qquad
+ M\we=p\Kt\Iq-p\,T_L . \tag{3}
+\end{equation}
+
+\subt{控制器的单位怎样接到电机上}
+令 $u_q$ 为无量纲调制指令，$b$ 为 PWM 位数。平均桥将指令换算至相电压，去掉浮置中点共模后有
+\[
+ V_q=\kv U_q,\qquad
+ \kv=V_{\rm dc}\frac{2^b-1}{2^b}.
+\]
+固件的电流误差以 mA 计，速度 PI 也输出 mA。将两级改写到 A，连续设计表达式为
+\begin{equation}
+ \Ci(s)=1000\!\left(K_{p,i}+\frac{K_{i,i}}s\right),\qquad
+ \Cw(s)=\frac1{1000}\!\left(K_{p,\omega}+\frac{K_{i,\omega}}s\right). \tag{4}
+\end{equation}
+$\Ci$ 输出调制指令，$\Cw$ 的输入为电角速度误差，输出为 $q$ 轴给定电流。实际采样 PI 的积分时序见第 4 页。
+
+\newpage
+\titleline{2\quad 电流内环}
+令 $\Hi$ 为电流测量通道从真实电流到滤波电流的传递函数，$\widehat I_q=\Hi\Iq$。
+平均桥、电流 PI 和反馈误差共同决定施加的电压，
+\[
+ V_q=\kv\Ci(\Ir-\Hi\Iq).
+\]
+将它代入式 (3) 的电压方程，收集 $\Iq$ 项，得
+\begin{equation}
+ D_i\Iq=\kv\Ci\Ir-\psiP\we,\qquad D_i=Z_q+\kv\Ci\Hi . \tag{5}
+\end{equation}
+
+\subt{轴被锁住时，电流给定到实际电流}
+堵转意味着轴由外界固定，因而 $\we=0$。由式 (5) 可直接读出电流对象、环路增益和闭环，
+\begin{equation}
+ P_{i,0}=\frac{\kv}{Z_q},\qquad
+ \mathcal L_{i,0}=\Ci P_{i,0}\Hi,\qquad
+ \boxed{T_{i,0}=\frac{\Iq}{\Ir}=\frac{\kv\Ci}{D_i}} . \tag{6}
+\end{equation}
+$P_{i,0}$ 的输入为调制指令。如果输入直接取 $v_q$，电压到电流的对象是 $1/Z_q$。
+对 $d$ 轴，式 (6) 中用 $Z_d$ 替换 $Z_q$ 即得 $I_d/I_d^\star$。在所选工作点，$d$ 轴与轴速的一阶通道解耦。
+
+\subt{代入项目默认值的连续算例}
+取 $R_s=18.76~\Omega$，$L_q=2.58~{\rm mH}$，$V_{\rm dc}=12~{\rm V}$，$b=10$，
+故 $\kv=11.98828125~{\rm V}$、$\Ci=0.25+0.8/s$。
+先取 $\Hi=1$，将式 (6) 分子、分母同乘 $s$，
+\begin{equation}
+ T_{i,0}(s)=
+ \frac{2.9970703125s+9.590625}
+ {0.00258s^2+21.7570703125s+9.590625}. \tag{7}
+\end{equation}
+其直流增益为 1。式 (7) 用于核对量纲与二阶系数。项目实际电流低通的 $\alpha_i=0.15$，在数字闭环中须保留。
+
+\subt{转子可以转动时，反电动势随速度变化}
+断开外部速度反馈，令 $T_L=0$。机械方程给出 $\we=p\Kt\Iq/M$。
+将其代入式 (5)，电流内环以及同一次电流注入引起的速度响应分别为
+\begin{gather}
+ D_f=M D_i+p\Kt\psiP , \notag\\[-1pt]
+ \boxed{T_{i,f}=\frac{\Iq}{\Ir}=\frac{\kv\Ci M}{D_f}},\qquad
+ \boxed{P_\omega=\frac{\we}{\Ir}=\frac{p\Kt\kv\Ci}{D_f}}. \tag{8}
+\end{gather}
+式 (8) 的附加项 $p\Kt\psiP$ 来自“电流产生转矩、速度产生反电动势”这条物理反馈。
+若观察 Simulink 的滤波电流，则输出换成 $\widehat I_q/\Ir=\Hi T_{i,f}$。
+
+\newpage
+\titleline{3\quad 速度外环}
+默认方向符号为 $+1$。速度误差是电角速度给定与编码器估计之差。先用连续等效的测量通道
+$\widehat\Omega_e=\Hw\we$ 表示反馈。采样编码器的角度差分在第 4、5 页单独写出。
+\begin{equation}
+ \Ir=\Cw\!\left(\Wref-\Hw\we\right). \tag{9}
+\end{equation}
+
+\subt{从电流给定到整个速度闭环}
+由式 (8) 有 $\we=P_\omega\Ir$。代入式 (9) 并把含 $\we$ 的项移到左边，得
+\[
+ (1+P_\omega\Cw\Hw)\we=P_\omega\Cw\Wref.
+\]
+因此，速度环的环路增益及从电角速度给定到真实电角速度的闭环传递函数为
+\begin{gather}
+ \mathcal L_\omega=\Cw P_\omega\Hw,\qquad
+ T_\omega=\frac{\Cw P_\omega}{1+\mathcal L_\omega},\notag\\[2pt]
+ \boxed{\displaystyle
+ T_\omega(s)=\frac{\we}{\Wref}
+ =\frac{p\Kt\kv\Ci\Cw}{M(Z_q+\kv\Ci\Hi)+p\Kt\psiP+p\Kt\kv\Ci\Cw\Hw}} .\tag{10}
+\end{gather}
+若观察估计值，则 $\widehat\Omega_e/\Wref=\Hw T_\omega$。
+若直接从固件的电频率 $f^\star$（Hz）给定、读取机械轴速（rad/s），
+在给定限幅内、两者采用相同时间域时有
+\begin{equation}
+ \frac{\Omega_m}{F^\star}=\frac{2\pi}{p}\,T_\omega,\qquad
+ \frac{N_{\rm rpm}}{F^\star}=\frac{60}{p}\,T_\omega. \tag{11}
+\end{equation}
+
+\subt{负载扰动的符号与低频检查}
+令 $\Wref=0$，保留式 (3) 的负载转矩。联立电压、机械平衡式，记式 (10) 的分母为 $D_{\rm cl}$，
+\begin{equation}
+ \frac{\we}{T_L}=\frac{-pD_i}{D_{\rm cl}} . \tag{12}
+\end{equation}
+正向阻力使轴速下降，故分子带负号。闭环稳定、积分作用有效，且反馈通道直流增益均为 1 时，
+$T_\omega(0)=1$，恒定负载对应的稳态速度误差为零。
+
+\subt{参数的物理含义}
+项目工作区用 $p=7$、线电压有效值系数 $7.68~{\rm V/krpm}$ 换算出
+\[
+ \psiP=\frac{7.68\sqrt{2/3}}{7(1000\cdot 2\pi/60)}
+ \simeq 0.0085544~{\rm Wb},\qquad
+ \Kt\simeq 0.089821~{\rm N\,m/A}.
+\]
+默认 $\Cw(s)=0.027+0.200/s$。电机参数来自项目所引同类 2208 的辨识数据。
+机械惯量 $J=0.5\times10^{-6}~{\rm kg\,m^2}$、黏滞摩擦 $B=1.07\times10^{-6}~{\rm N\,m\,s/rad}$
+及磁链等数值仍取决于样机与负载。
+
+\newpage
+\titleline{4\quad 数字 PI、采样电机与编码器}
+取控制周期 $T=T_{\rm ctrl}$，默认 $1~{\rm ms}$，编码器每拍成功更新且 $T$ 位于时间门限内。
+下文 $k$ 表示采样序号。固件先用旧积分状态输出，再积入当前误差。在限幅未触发时
+\[
+ u[k]=k_p e[k]+x[k],\qquad x[k+1]=x[k]+k_iT e[k] .
+\]
+故两级数字 PI 均具有 $\mathcal C(z)=k_p+k_iT/(z-1)$ 的形式，
+其中 $k_p,k_i$ 已按式 (4) 转为 A。电流及速度的一阶低通使用当前样本，
+\begin{equation}
+ y[k]=(1-\alpha)y[k-1]+\alpha x[k],\qquad
+ H_\alpha(z)=\frac{\alpha z}{z-1+\alpha}.
+ \tag{13}
+\end{equation}
+分别用 $\Hi=H_{\alpha_i}$、$\Hw=H_{\alpha_\omega}$，默认 $\alpha_\omega=0.05$。
+
+\subt{从控制指令到一拍后可读出的电机状态}
+选状态 $x=[\delta i_q,\delta\omega_e,\delta\theta_e]^{\mathsf T}$，输入为 $u_q$。式 (3) 在 $T_L=0$ 时给出
+\begin{equation}
+ \dot x=A x+ b_u u_q,\quad
+ A=\begin{bmatrix}-R_s/L_q &-\psiP/L_q &0\\ p\Kt/J&-B/J&0\\0&1&0\end{bmatrix},
+ \qquad b_u=\begin{bmatrix}\kv/L_q\\0\\0\end{bmatrix}. \tag{14}
+\end{equation}
+平均桥在一拍内保持输入。若用理想零阶保持精确积分，
+$\Phi=\ee^{AT}$，$\Gamma=\int_0^T\ee^{At}b_u\,\dd t$。若对齐项目的 RK4 对象，
+取 $h=T_{\rm plant}$、$N=T/h$，用增广矩阵处理保持输入，
+\begin{align}
+ F&=\begin{bmatrix} A & b_u\\ 0&0\end{bmatrix},&
+ \begin{bmatrix}\Phi&\Gamma\\0&1\end{bmatrix}
+ &=\left(\sum_{j=0}^{4}\frac{(hF)^j}{j!}\right)^{\!N}. \tag{15}
+\end{align}
+两种积分约定均可写为 $x[k+1]=\Phi x[k]+\Gamma u_q[k]$。令各行依次对应电流、电角速度、电角度，
+\begin{equation}
+ [P_i(z),P_\omega^{u}(z),P_\theta(z)]^{\mathsf T}=(zI-\Phi)^{-1}\Gamma . \tag{16}
+\end{equation}
+
+\subt{估速器从两次角度读数获得平均速度}
+在编码器方向默认为正、忽略角度量化、相邻读数可正确解包时，原始估速为
+$[\theta_e[k]-\theta_e[k-1]]/T$，其中 $\theta_e=p\theta_m$。
+施加同拍滤波后，调制输入到速度反馈的传递函数为
+\begin{equation}
+ P_{\widehat\omega}^{u}(z)=\Hw(z)\,\frac{1-z^{-1}}{T}\,P_\theta(z). \tag{17}
+\end{equation}
+角差给出上一采样区间的平均速度，$P_\omega^{u}$ 则对应区间端点的瞬时速度。两者在高频会有不同的幅值与相位。
+
+\newpage
+\titleline{5\quad 采样闭环与数值核对}
+以下各量均在 $z$ 域。以 $U=\Ci(\Ir-\Hi\Iq)$ 和 $\Iq=P_i U$ 消去电流反馈。
+对自由转子，外部速度反馈断开时有
+\begin{equation}
+ \frac{\Iq}{\Ir}=\frac{\Ci P_i}{1+\Ci\Hi P_i},\qquad
+ \frac{\we}{\Ir}=\frac{\Ci P_\omega^u}{1+\Ci\Hi P_i}.
+ \tag{18}
+\end{equation}
+若需要对应的堵转数字电流环，将式 (18) 的 $P_i$ 换成一阶 $L_q\dot i_q=-R_s i_q+\kv u_q$ 的采样对象即可。
+在自由转子上接入 $\Ir=\Cw(\Wref-P_{\widehat\omega}^u U)$ 后，令
+\[
+ D_z=1+\Ci\Hi P_i+\Cw\Ci P_{\widehat\omega}^u ,
+\]
+便得到真实速度、估计速度两个可在仿真中分别读取的通道，
+\begin{equation}
+ \boxed{\frac{\we}{\Wref}=\frac{\Cw\Ci P_\omega^u}{D_z}},\qquad
+ \boxed{\frac{\widehat\Omega_e}{\Wref}=\frac{\Cw\Ci P_{\widehat\omega}^u}{D_z}} .
+ \tag{19}
+\end{equation}
+
+\subt{默认工作区的极点}
+按式 (15) 取 $h=10~\mu{\rm s}$、$N=100$，用式 (13) 的控制与滤波时序闭合式 (19)。
+化简从给定到真实电角速度的传递函数后，六个离散极点（四位小数）为
+\[
+ -0.0050,\quad 0.6961\pm0.3777\,\mathrm j,\quad
+ 0.8486,\quad 0.9938,\quad 0.9965 .
+\]
+这些极点均在单位圆内。角度原点的常数平移被编码器差分消去，故速度传递函数中没有独立的位置积分极点。
+
+从仓库根目录运行 \src{python analysis/derive_foc_loops.py}，即可直接得到自由转子 $\Iq/\Ir$ 和级联 $\we/\Wref$ 的 $z$ 降幂分子、分母系数及直流增益。
+
+独立按相同控制时序对非线性 $dq$ 对象运行 RK4，共 240 拍，PWM 与传感器采用连续近似。分别注入正负小电流脉冲（峰值 $10^{-5}~\mathrm A$）及小速度脉冲（峰值 $10^{-3}~\mathrm{rad/s}$），实际电流、实际电角速度与相应数字传递函数的最大差值分别为 $4.7\times10^{-18}~\mathrm A$、$3.1\times10^{-14}~\mathrm{rad/s}$。
+
+\subt{适用工况与复核入口}
+上述结论适用于默认正方向、静止空载平衡点附近的平均小信号模型。分析保留了反电动势、采样保持、PI 的更新次序以及两路反馈滤波，适用于给定限幅、逐轴及圆形调制限幅、过流保护均未动作的区间。完整模型保留量化阶梯。非零转速下，式 (1) 的 $dq$ 交叉耦合以及角预测的作用须在该工作点重新线性化。
+
+{\small
+\renewcommand{\arraystretch}{1.24}
+\begin{tabular}{@{}ll@{}}
+\toprule
+工程内的文件 & 可核对的内容\\
+\midrule
+\src{firmware/foc/main/main.c} & \src{pi_step}、主循环滤波与速度 PI\\
+\src{simulink/esp32p4_foc_data.m} & 控制、电机、传感器与负载参数\\
+\src{simulink/private/build_control.m} & 电流反馈、估速器、两级 PI 时序\\
+\src{simulink/private/build_drive.m} & PWM 计数、平均相电压\\
+\src{simulink/private/build_motor.m} & $dq$ 方程与对象 RK4 步进\\
+\src{analysis/derive_foc_loops.py} & SymPy 符号推导与数值复核\\
+\bottomrule
+\end{tabular}}
+\end{document}
