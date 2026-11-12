@@ -90,6 +90,8 @@ python tools/dump.py 3 60     # 运行中采样 60 点三相电流
 
 ## 控制结构
 
+[Simulink 整机模型与运行说明](simulink/README.md) 包含速度与双轴电流控制、三相逆变器、DENG FOC 2208 电机及传感器反馈。控制、对象和测试工况均可从 [参数文件](simulink/esp32p4_foc_data.m) 修改。
+
 完整框图见 [`docs/control_diagram.pdf`](docs/control_diagram.pdf)（源码 `control_diagram.tex`，用 xelatex 编译）。
 
 ```text
