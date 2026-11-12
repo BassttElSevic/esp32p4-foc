@@ -35,6 +35,27 @@ out = sim(in);
 
 [推导 PDF](../analysis/foc_transfer_functions.pdf) 从静止、空载工作点推导堵转电流环、自由转子的电流环和电角速度闭环，并给出按控制周期采样的传递函数。安装 Python 和 SymPy 后，在仓库根目录执行 `python analysis/derive_foc_loops.py` 即可用当前模型参数重算系数和极点。[SymPy 脚本](../analysis/derive_foc_loops.py)
 
+## MATLAB 伯德图、裕度和时域响应
+
+在仓库根目录运行以下两行（已在 MATLAB R2026a + Control System Toolbox 上运行）。脚本读取与 Simulink 相同的电机和控制参数。返回的 `model.current`、`model.speed` 和 `model.locked` 含开环返回比 `open`、真实输出闭环 `closed` 和反馈测量闭环 `measured`。
+
+```matlab
+addpath('analysis')
+[metrics, checks, model] = run_foc_analysis;
+```
+
+伯德图按 Hz 显示。相位裕度取开环 0 dB 交越点，增益裕度取开环负实轴交点，包含离散奈奎斯特端点。闭环带宽取相对直流增益首次下降 3 dB 的频率。若整个离散频带内无交点，汇总表用非有限值表示。根轨迹独立缩放正在分析的 PI 的比例和积分增益，保留其零点。电流环试验断开速度外环，速度环试验保留闭合的电流内环；两种试验均给出阶跃、正弦以及真实和反馈测量输出。
+
+默认的 PDF、各张图和指标 CSV 位于 [分析结果目录](../analysis/results/)。如需分析另一套参数并保留默认结果，使用 `run_foc_analysis(outDir, dataFile)` 指定新输出目录与参数脚本。时域结果是静止空载工作点的离散小信号响应，完整量化与限幅的仿真仍可在本页顶部的 Simulink 模型中运行。
+
+每个环默认测试两个正弦频率。`checks.current.sine` 和 `checks.speed.sine` 记录每个频点真实输出、反馈估计的幅值比与相位，并与伯德图交叉核对。`checks.current.step` 和 `checks.speed.step` 记录阶跃峰值与调节时间。可单独指定两环的幅值和频率，例如
+
+```matlab
+checks = plot_foc_time(model, metrics, 'my_time_plots', ...
+    CurrentAmplitudeA=1e-7, CurrentFrequenciesHz=[0.0001 0.0003], ...
+    SpeedAmplitudeRadps=0.01, SpeedFrequenciesHz=[1 80]);
+```
+
 ## 对象参数及其来源
 
 实际对象是灯哥 DENG FOC 套件 2208。用户仓库注明 **7 极对、110 KV、额定 12 V/2 A**。灯哥官网的 2208 双电机调试底座列为 **7 极对、100 KV、12 V、工作电流 200–500 mA、电阻 14.4 Ω**，其中未给出电阻的相绕组或线间测量口径。固件内的 110 KV 用于打印转矩估计，速度 PI 和电流 PI 直接使用采样反馈。[项目硬件说明](../README.md) · [灯哥官方规格表](http://dengfoc.com/dengfoc/DengFOC官方硬件/3无刷电机/3.1_2208.md)
