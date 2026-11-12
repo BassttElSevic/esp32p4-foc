@@ -1,0 +1,113 @@
+\documentclass[tikz,border=12pt]{standalone}
+\usepackage{amsmath}
+\usepackage{ctex}
+\usetikzlibrary{positioning,arrows.meta,calc}
+
+\begin{document}
+\begin{tikzpicture}[
+  >={Stealth[length=2.2mm]},
+  block/.style  = {draw, rounded corners=1.5pt, fill=blue!5, minimum height=8.5mm,
+                   minimum width=13mm, align=center, font=\scriptsize},
+  sum/.style    = {draw, circle, inner sep=0pt, minimum size=5.6mm, font=\footnotesize},
+  fb/.style     = {draw, rounded corners=1.5pt, fill=orange!8, minimum height=8.5mm,
+                   minimum width=13mm, align=center, font=\scriptsize},
+  arr/.style    = {->, thick},
+  wire/.style   = {thick},
+  lbl/.style    = {font=\scriptsize, inner sep=1.5pt}
+]
+
+% ═══════════ 前向通路  y = 0 ═══════════
+\node[block] (f)   at (0.0,0)   {$f$\,[Hz]};
+\node[block] (w2p) at (2.3,0)   {$\times 2\pi$};
+\node[sum]   (s1)  at (4.2,0)   {$\Sigma$};
+\node[block] (sp)  at (6.7,0)   {速度 PI\\$40\,/\,200$};
+\node[block] (sg)  at (9.3,0)   {$\times\,s_{\mathrm{dir}}$};
+\node[sum]   (sq)  at (11.3,0)  {$\Sigma$};
+\node[block] (pq)  at (13.4,0)  {PI$_q$};
+\node[block] (vl)  at (15.8,0)  {矢量\\限幅};
+\node[block] (ip)  at (18.1,0)  {反 Park};
+\node[block] (ic)  at (20.4,0)  {反 Clarke};
+\node[block] (pw)  at (22.7,0)  {PWM\\$20$\,kHz};
+\node[fb]    (mt)  at (25.2,0)  {电机\\$2208$};
+
+% ═══════════ 电流环  y = -3.6 ═══════════
+\node[fb]    (is)  at (2.7,-3.6)  {分流+INA199\\+ ADC};
+\node[block] (cl)  at (6.0,-3.6)  {Clarke};
+\node[block] (pk)  at (8.7,-3.6)  {Park};
+\node[sum]   (sd)  at (11.3,-3.6) {$\Sigma$};
+\node[block] (pd)  at (13.4,-3.6) {PI$_d$};
+
+% ═══════════ 编码器  y = -3.6（右） ═══════════
+\node[block] (te)  at (21.8,-3.6) {机械$\to$电\\角度};
+\node[fb]    (en)  at (25.2,-3.6) {AS5600\\$400$k I2C};
+
+% ═══════════ 前向连线 ═══════════
+\draw[arr] (f)  -- (w2p);
+\draw[arr] (w2p) -- (s1);
+\draw[arr] (s1) -- (sp);
+\draw[arr] (sp) -- node[lbl,above]{$I_q^{\mathrm{ref}}$} (sg);
+\draw[arr] (sg) -- (sq);
+\draw[arr] (sq) -- (pq);
+\draw[arr] (pq.east) -- node[lbl,above]{$V_q$} (vl.west);
+\draw[arr] (vl.east) -- (ip.west);
+\draw[arr] (ip) -- (ic);
+\draw[arr] (ic) -- (pw);
+\draw[arr] (pw) -- (mt);
+
+% ═══════════ 电机 → 编码器 ═══════════
+\draw[arr] (mt.south) -- (en.north);
+\draw[arr] (en.west)  -- (te.east);
+
+% ═══════════ 电机 → 电流采样（走 y=-1.5 直线） ═══════════
+\draw[arr] (mt.south) ++(0,-0.45) -| (27.8,-4.9)
+      -- (2.7,-4.9) -- (is.south);
+\node[lbl, at={(15.0,-4.9)}, fill=white, inner sep=1pt]
+     {$I_u,\;I_v$ 相电流（差分放大）};
+
+% ═══════════ 电流采样 → 电流环 ═══════════
+\draw[arr] (is.east) -- (cl.west);
+\draw[arr] (cl.east) -- (pk.west);
+\draw[arr] (pk.east) -- node[lbl,above]{$I_d$} (sd.west);
+\draw[arr] (pd.east) -- (14.7,-3.6) -- (14.7,-0.37) -- (vl.south);
+\node[lbl, at={(14.85,-2.05)}, anchor=west] {$V_d$};
+
+\draw[arr] (pk.north) -- (8.7,-2.4) -- (11.3,-2.4) -- (sq.south);
+\node[lbl, at={(8.55,-2.95)}, anchor=east] {$I_q$};
+
+% ═══════════ θe 母线  y = -5.9 ═══════════
+\draw[arr] (te.south) -- (21.8,-6.4);
+\draw[wire] (21.8,-6.4) -- (8.7,-6.4);
+\draw[arr] (8.7,-6.4) -- (pk.south);
+\draw[arr] (18.1,-6.4) -- (ip.south);
+\draw[fill=black] (18.1,-6.4) circle (1.2pt);
+\draw[fill=black] (8.7,-6.4)  circle (1.2pt);
+\node[lbl, at={(14.9,-6.4)}, fill=white, inner sep=1pt]
+     {$\theta_e$ 实测电角度（含 $s_{\mathrm{enc}}$、$p$、$\theta_{\mathrm{off}}$）};
+
+% ═══════════ 速度反馈（上方正交走线） ═══════════
+\draw[arr] (en.east) -- (28.6,-3.6);
+\draw[wire] (28.6,-3.6) -- (28.6,2.2);
+\draw[wire] (28.6,2.2) -- (4.2,2.2);
+\draw[arr] (4.2,2.2) -- (s1.north);
+\node[lbl, at={(16.0,2.2)}, fill=white, inner sep=1pt]
+     {$\omega_e$：编码器微分 $\to$ 低通（$\alpha=0.05$）};
+
+% ═══════════ 说明框 ═══════════
+\node[draw, rounded corners=2pt, fill=yellow!10, align=left, font=\scriptsize,
+      anchor=north west, text width=8.6cm] at (-1.4,-7.5) {%
+  \textbf{符号约定（三处必须自洽，否则表现为不转或速度环飞车）}\\[2pt]
+  $\theta_e=\mathrm{wrap}_{2\pi}\!\big(s_{\mathrm{enc}}\cdot p\cdot\theta_{\mathrm{mech}}+\theta_{\mathrm{off}}\big)$，
+  $p=7$；$s_{\mathrm{enc}},\theta_{\mathrm{off}}$ 由上电标定实测\\[1pt]
+  $s_{\mathrm{dir}}=\mathrm{TORQUE\_SIGN}\cdot s_{\mathrm{enc}}$：转矩符号跟随编码器方向\\[1pt]
+  $\theta_e \leftarrow \theta_{\mathrm{meas}}+\omega_e\,dt$：前向补偿采样延迟};
+
+\node[draw, rounded corners=2pt, fill=green!8, align=left, font=\scriptsize,
+      anchor=north west, text width=7.6cm] at (9.4,-7.5) {%
+  \textbf{关键参数}\\[2pt]
+  采样：$0.015\,\Omega\times 50 = 0.75$\,mV/mA，零点 $1.68$\,V，量程 $\pm1.93$\,A\\
+  电流环：$K_p=2.5\!\times\!10^{-4}$，$K_i=8\!\times\!10^{-4}$（调制比/mA）\\
+  电压限幅：$|V|\le 0.40$（SPWM 上限 $0.5$）；过流 $1500$\,mA\\
+  $I_d^{\mathrm{ref}}=0$；$I_q^{\mathrm{ref}}$ 限幅 $\pm$\texttt{i} 指令；PWM $20$\,kHz/10\,bit};
+
+\end{tikzpicture}
+\end{document}
