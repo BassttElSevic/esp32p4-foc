@@ -1,0 +1,40 @@
+name: Build ESP32-P4 sine bench
+
+on:
+  push:
+    paths:
+      - 'firmware/sine-bench/**'
+      - 'firmware/foc/**'
+      - '.github/workflows/bench-build.yml'
+  pull_request:
+    paths:
+      - 'firmware/sine-bench/**'
+      - 'firmware/foc/**'
+      - '.github/workflows/bench-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    container:
+      image: espressif/idf:v6.0.1@sha256:efc19fae2f52fc6873630c668da26aa834139a063b5fb73a46ebc0dbd217b587
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build bench firmware for ESP32-P4
+        working-directory: firmware/sine-bench
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py -D IDF_TARGET=esp32p4 build
+      - name: Build original drive with the shared parameters
+        working-directory: firmware/foc
+        shell: bash
+        run: |
+          source "$IDF_PATH/export.sh"
+          idf.py -D IDF_TARGET=esp32p4 build
