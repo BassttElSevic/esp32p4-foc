@@ -122,7 +122,7 @@ class Board:
             code, limited = int(parts[7]), int(parts[8])
             if (seq != len(rows) or timestamp < 0 or (rows and timestamp <= rows[-1][1])
                     or not all(math.isfinite(x) for x in signals) or not 0 <= code < 4096
-                    or limited < 0):
+                    or limited not in (0, 1)):
                 raise BenchError("Invalid sequence, timestamp or sample values.")
             row = (seq, timestamp, *signals, code, limited)
             writer.writerow((*metadata, *row))

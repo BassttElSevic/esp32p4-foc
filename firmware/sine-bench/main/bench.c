@@ -30,6 +30,8 @@
 #define LOOP_GAP_US       10000
 #define RECORD_US          4000
 #define MAX_RECORDS (1 + MAX_SECONDS * 1000000 / RECORD_US)
+#define STUCK_CHECK_MOD      0.020f
+#define STUCK_CHECK_US      120000
 
 typedef enum { BOOT, UNCAL, IDLE, CAL, TEST, DONE, FAULT, DUMP } state_t;
 typedef enum { ALIGN, CURRENT, SPEED } bench_mode_t;
@@ -245,11 +247,18 @@ static void run_test(request_t r)
     int64_t t0=s.time, next=0;
     if (!arm(t0,duration)) return;
     float xi_d=0,xi_q=0,xi_speed=0,id_f=0,iq_f=0,w_f=0;
+    int64_t flat_since=t0;
+    float previous_mod=0;
     bool limited=false;
     while (live()) {
         sensors_t previous=s;
         vTaskDelay(1);
         if (!read_sensors(&s)) break;
+        /* s.u/v come from integer ADC mV. Under sustained appreciable drive,
+         * two exactly unchanged readings are ambiguous: end the trial. */
+        if (previous_mod<STUCK_CHECK_MOD || s.u!=previous.u || s.v!=previous.v)
+            flat_since=s.time;
+        else if (s.time-flat_since>=STUCK_CHECK_US) { fail("current_stuck"); break; }
         float dt,raw;
         if (!speed_sample(&s,&previous,&dt,&raw)) break;
         int elapsed=(int)(s.time-t0);
@@ -268,6 +277,7 @@ static void run_test(request_t r)
         float q=pi_step(&xi_q,target-iq_f,CUR_KP_AMP_PER_MA,CUR_KI_AMP_PER_MA_S,dt,MOD_LIMIT,&limited);
         float mag=hypotf(d,q);
         if (mag>MOD_LIMIT) { d*=MOD_LIMIT/mag; q*=MOD_LIMIT/mag; limited=true; }
+        previous_mod=fminf(mag,MOD_LIMIT);
         if (!apply(theta,d,q,s.time)) break;
         if (elapsed>=next) {
             if (count>=MAX_RECORDS) { fail("buffer_full"); break; }
@@ -276,6 +286,7 @@ static void run_test(request_t r)
             next=((int64_t)elapsed/RECORD_US+1)*RECORD_US;
         }
     }
+    if (limited && count) record[count-1].limited=true;
 }
 
 static void motor_task(void *arg)

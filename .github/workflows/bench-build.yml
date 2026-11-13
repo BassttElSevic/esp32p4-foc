@@ -5,11 +5,13 @@ on:
     paths:
       - 'firmware/sine-bench/**'
       - 'firmware/foc/**'
+      - 'tests/sine_bench/**'
       - '.github/workflows/bench-build.yml'
   pull_request:
     paths:
       - 'firmware/sine-bench/**'
       - 'firmware/foc/**'
+      - 'tests/sine_bench/**'
       - '.github/workflows/bench-build.yml'
   workflow_dispatch:
 
@@ -17,6 +19,14 @@ permissions:
   contents: read
 
 jobs:
+  state-machine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: python3 tests/sine_bench/test_state_machine.py
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 25
