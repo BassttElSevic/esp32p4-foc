@@ -1,0 +1,8 @@
+mode,frequency_Hz,requested_amplitude,cycles,board_end,expected_samples,reference_unit,seq,t_us,reference,iq_mA,iq_filtered_mA,omega_raw_e_rad_s,omega_filtered_e_rad_s,angle_code,limited
+speed,1.0,2.0,5,overspeed,7,electrical_rad/s,0,1019,0.012805,-11.4616,-0.57308,0.0,0.0,1231,0
+speed,1.0,2.0,5,overspeed,7,electrical_rad/s,1,4001,0.0502728,-8.90479,-2.50047,10.9339,0.546694,1232,0
+speed,1.0,2.0,5,overspeed,7,electrical_rad/s,2,8001,0.100501,-7.66395,-4.8913,0.0,-0.0068605,1231,0
+speed,1.0,2.0,5,overspeed,7,electrical_rad/s,3,12001,0.150666,-38.1309,-5.90937,0.0,0.495405,1232,0
+speed,1.0,2.0,5,overspeed,7,electrical_rad/s,4,16001,0.200736,18.654,-7.00055,-10.9339,-0.192527,1231,0
+speed,1.0,2.0,5,overspeed,7,electrical_rad/s,5,20002,0.250691,65.6286,0.725333,32.7699,0.536073,1232,0
+speed,1.0,2.0,5,overspeed,7,electrical_rad/s,6,24002,0.300476,-134.96,-18.9599,-32.7375,2.09055,1236,1

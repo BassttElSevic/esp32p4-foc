@@ -105,11 +105,11 @@ def main():
             if state == "UNCAL":
                 calibrate(board)
             for spec in (args.current or []):
-                saved.append(run_test(board, "current",
-                                      spec[0], spec[1], spec[2], args.outdir))
+                hz, amp, cycles = spec
+                saved.append(run_test(board, "current", hz, amp, cycles, args.outdir))
             for spec in (args.speed or []):
-                saved.append(run_test(board, "speed",
-                                      spec[0], spec[1], spec[2], args.outdir))
+                hz, amp, cycles = spec
+                saved.append(run_test(board, "speed", hz, amp, cycles, args.outdir))
             board.send("bench stop")
     except KeyboardInterrupt:
         sys.exit(130)
