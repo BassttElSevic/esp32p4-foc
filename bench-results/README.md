@@ -2,6 +2,8 @@
 
 本目录是 `firmware/sine-bench` 在 ESP32-P4 + 灯哥 FOC 2208 台架上的实测输出。
 
+11 份实测记录与同工况 Simulink 仿真的波形、保护动作和逐点误差见[仿真与实测对照](comparison/README.md)。
+
 ## 台架与配置
 
 | 项目 | 值 |
