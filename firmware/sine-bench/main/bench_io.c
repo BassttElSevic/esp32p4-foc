@@ -148,10 +148,24 @@ bool bench_io_sample(float *u_mv, float *v_mv, int *angle_code)
     const uint8_t reg = AS5600_REG_STATUS;
     uint8_t data[3];
     if (!read_mv(ADC_CH_U, cal_u, &u) || !read_mv(ADC_CH_V, cal_v, &v) ||
-        i2c_master_transmit_receive(encoder, &reg, 1, data, sizeof(data), SENSOR_TIMEOUT_MS) != ESP_OK ||
-        (data[0] & 0x38U) != 0x20U) {
+        i2c_master_transmit_receive(encoder, &reg, 1, data, sizeof(data), SENSOR_TIMEOUT_MS) != ESP_OK) {
         bench_io_disable();
         return false;
+    }
+    /* MD (bit5) must be set. ML(bit4)/MH(bit3) are field-strength warnings only:
+     * this rig's magnet reads 0x33 (MD=1, ML=1) while the 12-bit angle stays
+     * stable, so treat them as advisory instead of failing the sample. */
+    if ((data[0] & 0x20U) == 0U) {          /* magnet not detected */
+        bench_io_disable();
+        return false;
+    }
+    if ((data[0] & 0x18U) != 0U) {          /* ML and/or MH set */
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            ESP_LOGW("bench_io", "AS5600 field-strength warning STATUS=0x%02X "
+                                 "(ML/MH set; angle data still in use)", data[0]);
+        }
     }
     *u_mv = u;
     *v_mv = v;

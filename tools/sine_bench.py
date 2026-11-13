@@ -296,6 +296,11 @@ def main():
             port.rts = False
             port.open()
             port.reset_input_buffer()
+            # This board's CH343 toggles the reset lines when the port is opened,
+            # so the MCU reboots here. Wait for the bootloader and the console
+            # prompt before sending the first command, otherwise it is dropped.
+            time.sleep(2.5)
+            port.reset_input_buffer()
             run(args, Board(port))
     except KeyboardInterrupt:
         sys.exit(130)
