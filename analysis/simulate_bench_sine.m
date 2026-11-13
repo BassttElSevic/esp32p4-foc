@@ -1,12 +1,21 @@
-function [prediction,meta] = simulate_bench_sine(rows,tuning)
+function [prediction,meta] = simulate_bench_sine(rows,tuning,plant,exportFile)
 %SIMULATE_BENCH_SINE Run one BENCH1 sine experiment against the project SLX.
 % rows is a single bench CSV read by readtable. Optional tuning fields are
 % alpha_i, Kp_i, Ki_i and Kp_w in esp32p4_foc_data.m units. Feedback is
 % sampled on the nearest nominal 1 ms control tick to each board timestamp.
 % Once the simulated protection trips, subsequent predictions are missing.
 % The simulation runs the commanded duration even when the board stopped early.
+% Optional plant fields are effective_R_ohm (effective stator resistance),
+% effective_B_Nms_per_rad (effective viscous term), and restoring_A_per_rad
+% (local restoring torque per mechanical radian / Kt). A fourth argument
+% saves an editable SLX with all workspace parameters embedded in the file.
+% theta_m_rad is the physical model angle relative to its starting position.
 
 if nargin < 2 || isempty(tuning), tuning = struct(); end
+if nargin < 3 || isempty(plant), plant = struct(); end
+if nargin < 4, exportFile = ''; end
+assert(isstruct(plant) && isscalar(plant) && all(ismember(fieldnames(plant), ...
+    {'effective_R_ohm','effective_B_Nms_per_rad','restoring_A_per_rad'})),'Unsupported local plant parameter.');
 mode = string(rows.mode(1));
 assert(ismember(mode,["speed","current"]) && all(string(rows.mode)==mode));
 hz = rows.frequency_Hz(1);
@@ -31,15 +40,29 @@ if ~sourceWasOpen
 end
 [~,name] = fileparts(tempname);
 name = matlab.lang.makeValidName(['bench_' name]);
-new_system(name);
-cleanup = onCleanup(@() close_system(name,0)); %#ok<NASGU>
+hModel = new_system(name);
+cleanup = onCleanup(@() close_system(hModel,0)); %#ok<NASGU>
 set_param(name,'SolverType','Fixed-step','Solver','FixedStepDiscrete', ...
     'SolverMode','SingleTasking','FixedStep','Ts_plant','StopTime',num2str(duration,17), ...
     'ReturnWorkspaceOutputs','on','SignalLogging','off','SaveTime','off','SaveOutput','off');
 w = get_param(name,'ModelWorkspace');
-w.DataSource = 'MATLAB File';
-w.FileName = fullfile(modelDir,'esp32p4_foc_data.m');
-reload(w);
+% Copy the project's parameter script into this workspace. A saved harness
+% then owns its values ("Model File") and can be opened on another computer.
+evalin(w,fileread(fullfile(modelDir,'esp32p4_foc_data.m')));
+if isfield(plant,'effective_R_ohm')
+    validateattributes(plant.effective_R_ohm,{'double'},{'scalar','real','finite','positive'});
+    assignin(w,'R_s',plant.effective_R_ohm);
+end
+if isfield(plant,'effective_B_Nms_per_rad')
+    validateattributes(plant.effective_B_Nms_per_rad,{'double'},{'scalar','real','finite','nonnegative'});
+    assignin(w,'B_m',plant.effective_B_Nms_per_rad);
+end
+restoring = 0;
+if isfield(plant,'restoring_A_per_rad')
+    validateattributes(plant.restoring_A_per_rad,{'double'},{'scalar','real','finite','nonnegative'});
+    restoring = plant.restoring_A_per_rad;
+end
+assignin(w,'restoring_A_per_rad',restoring);
 keys = fieldnames(tuning);
 assert(all(ismember(keys,{'alpha_i','Kp_i','Ki_i','Kp_w'})),'Unsupported tuning field.');
 for k=1:numel(keys)
@@ -69,7 +92,22 @@ for part = ["PWM and inverter","PMSM and shaft","Current and position sensors"]
     add_block([source '/' char(part)],[name '/' char(part)]);
 end
 add_block('simulink/Sources/Digital Clock',[name '/Tick'],'SampleTime','Ts_ctrl');
-add_block('simulink/Sources/Constant',[name '/No load'],'Value','0','SampleTime','Ts_plant');
+if restoring==0 && strlength(exportFile)==0
+    add_block('simulink/Sources/Constant',[name '/Load torque'],'Value','0','SampleTime','Ts_plant');
+else
+    % The PMSM port holds load over one plant step. Evaluate k*theta at
+    % its estimated midpoint to avoid introducing a half-step load delay.
+    % The local equilibrium and motor_x0(3) are both zero.
+    add_block('simulink/Math Operations/Gain',[name '/Half-step angle'], ...
+        'Gain','Ts_plant/2');
+    add_block('simulink/Math Operations/Sum',[name '/Midpoint angle'],'Inputs','++');
+    add_block('simulink/Math Operations/Gain',[name '/Load torque'], ...
+        'Gain','1.5*p_pairs*psi_pm*restoring_A_per_rad');
+    add_line(name,'PMSM and shaft/3','Half-step angle/1');
+    add_line(name,'PMSM and shaft/2','Midpoint angle/1');
+    add_line(name,'Half-step angle/1','Midpoint angle/2');
+    add_line(name,'Midpoint angle/1','Load torque/1');
+end
 add_block('simulink/Sources/Constant',[name '/Bus voltage'],'Value','V_dc','SampleTime','Ts_plant');
 add_block('simulink/User-Defined Functions/MATLAB Function',[name '/Bench controller']);
 chart = sfroot().find('-isa','Stateflow.EMChart','Path',[name '/Bench controller']);
@@ -87,6 +125,8 @@ for k=1:numel(params)
 end
 add_block('simulink/Sinks/To Workspace',[name '/Tick log'], ...
     'VariableName','sampleLog','SaveFormat','Timeseries','MaxDataPoints','inf');
+add_block('simulink/Sinks/To Workspace',[name '/Shaft angle log'], ...
+    'VariableName','shaftLog','SaveFormat','Timeseries','MaxDataPoints','inf','SampleTime','Ts_ctrl');
 lines = {'Tick/1','Bench controller/1'; ...
     'PMSM and shaft/1','Current and position sensors/1'; ...
     'PMSM and shaft/2','Current and position sensors/2'; ...
@@ -94,7 +134,8 @@ lines = {'Tick/1','Bench controller/1'; ...
     'Current and position sensors/2','Bench controller/3'; ...
     'Bench controller/1','PWM and inverter/1'; 'Bench controller/2','PWM and inverter/2'; ...
     'Bench controller/3','Tick log/1'; 'Bus voltage/1','PWM and inverter/3'; ...
-    'PWM and inverter/1','PMSM and shaft/1'; 'No load/1','PMSM and shaft/2'};
+    'PWM and inverter/1','PMSM and shaft/1'; 'Load torque/1','PMSM and shaft/2'; ...
+    'PMSM and shaft/2','Shaft angle log/1'};
 for k=1:size(lines,1), add_line(name,lines{k,1},lines{k,2}); end
 for port=3:5
     sink = sprintf('Unused motor output %d',port);
@@ -113,6 +154,11 @@ ts = getVariable(w,'Ts_ctrl');
 tick = min(numel(trace.Time),round(rows.t_us*1e-6/ts)+1);
 assert(all(abs(trace.Time(tick)-rows.t_us*1e-6)<=0.501*ts),'Log sample rate mismatch.');
 selected = signals(tick,1:6);
+shaft = out.shaftLog;
+assert(isequal(shaft.Time,trace.Time),'Mechanical and controller log clocks differ.');
+theta = reshape(shaft.Data,[],1);
+assert(all(isfinite(theta)),'Nonfinite simulated shaft angle.');
+theta = theta(tick)-theta(1);
 % BENCH1 logs the OR of any limiting since the preceding recorded sample.
 limitCount = cumsum(signals(:,6)~=0);
 selected(:,6) = diff([0; limitCount(tick)])>0;
@@ -126,9 +172,25 @@ if ~isempty(trip)
     meta.stop_detail = detail(reason);
     meta.stop_s = trace.Time(trip);
     selected(tick>=trip,2:end) = NaN;
+    theta(tick>=trip) = NaN;
 end
 prediction = array2table([rows.t_us,selected],'VariableNames', ...
     {'t_us','reference','iq_mA','iq_filtered_mA','omega_raw_e_rad_s','omega_filtered_e_rad_s','limited'});
+prediction.theta_m_rad = theta;
+if strlength(exportFile)>0
+    [~,exportName,extension] = fileparts(exportFile);
+    assert(strcmpi(extension,'.slx') && isvarname(exportName),'Use a valid Simulink model name with .slx extension.');
+    assert(~bdIsLoaded(exportName),'Close the model %s before replacing its exported file.',exportName);
+    set_param(name,'Description',[ ...
+        'BENCH1 small-angle experiment. Model Workspace owns the complete parameter snapshot. ' ...
+        'R_s (ohm), B_m (N m s/rad), restoring_A_per_rad (A/rad) specify the local plant. ' ...
+        'Set bench_speed=1 for electrical speed, 0 for q current; bench_hz is the reference ' ...
+        'frequency and bench_amp is its peak in electrical rad/s or mA.']);
+    set_param(name,'StopTime','bench_duration');
+    Simulink.BlockDiagram.arrangeSystem(name);
+    set_param(name,'ZoomFactor','FitSystem');
+    save_system(name,exportFile);
+end
 end
 
 % BEGIN EMBEDDED CONTROLLER
