@@ -1,0 +1,3 @@
+# 实测数据按字节原样保存, 不做换行符转换
+bench-results/*.csv -text -diff
+*.csv -text
