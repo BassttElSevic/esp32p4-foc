@@ -178,7 +178,10 @@ static bool preflight(bool calibrating, sensors_t *last)
 static bool speed_sample(const sensors_t *s,const sensors_t *previous,float *dt,float *raw)
 {
     int64_t elapsed = s->time-previous->time;
-    if (elapsed<100 || elapsed>=LOOP_GAP_US) return fail("sample_interval");
+    if (elapsed<100 || elapsed>=LOOP_GAP_US) {
+        fail("sample_interval");
+        return false;
+    }
     *dt=elapsed*1e-6f;
     *raw = angle_delta(s->angle,previous->angle)*MOTOR_POLE_PAIRS_INIT/(*dt);
     if (fabsf(*raw)>MAX_RAW_SPEED) return fail("overspeed");
